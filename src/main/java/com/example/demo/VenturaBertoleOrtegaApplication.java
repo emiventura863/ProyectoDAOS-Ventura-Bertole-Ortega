@@ -6,6 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 /*
  * Integrantes:
  * Ventura Emiliano - eventura863@gmail.com
+ * Nicolas Ortega - nicolasortega.bboy@gmail.com
  */
 
 @SpringBootApplication
