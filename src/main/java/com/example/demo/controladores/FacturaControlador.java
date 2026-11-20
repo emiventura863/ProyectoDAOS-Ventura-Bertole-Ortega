@@ -19,6 +19,14 @@ import com.example.demo.dto.FacturaRequest;
 import java.util.List;
 import org.springframework.web.bind.annotation.RequestParam;
 import com.example.demo.entidades.EstadoFactura;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.server.ResponseStatusException;
+import com.example.demo.dto.FacturaResponse;
+
+import org.springframework.hateoas.Link;
+
+import org.springframework.hateoas.EntityModel;
+import org.springframework.hateoas.server.mvc.WebMvcLinkBuilder;
 
 @RestController
 @RequestMapping("/facturas")
@@ -31,27 +39,70 @@ public class FacturaControlador {
 		this.facturaServicio = facturaServicio;
 	}
 
-	// Buscar una factura por su ID
+	// Consultar una factura por ID
 	@GetMapping("/{id}")
-	public Factura obtenerFactura(@PathVariable Long id) {
-		return facturaServicio.buscarPorId(id);
+	public EntityModel<FacturaResponse> obtenerFactura(@PathVariable Long id) {
+
+		Factura factura = facturaServicio.buscarPorId(id);
+
+		return convertirAResponse(factura);
 	}
 
 	// Emitir una nueva factura
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
-	public Factura emitirFactura(@RequestBody FacturaRequest request) {
+	public EntityModel<FacturaResponse> emitirFactura(@RequestBody FacturaRequest request) {
 
-		return facturaServicio.emitirFactura(request.getContratoId(), request.getPeriodo(), request.getConcepto(),
-				request.getFechaEmision(), request.getFechaVencimiento(), request.getImporte());
+		Factura factura = facturaServicio.emitirFactura(request.getContratoId(), request.getPeriodo(),
+				request.getConcepto(), request.getFechaEmision(), request.getFechaVencimiento(), request.getImporte());
+
+		return convertirAResponse(factura);
 	}
 
-	// Listar facturas con filtros opcionales -> @RequestParam permite recibir parámetros opcionales desde la URL
+	// Listar facturas con filtros opcionales -> @RequestParam permite recibir
+	// parámetros opcionales desde la URL
+
+	// Listar facturas con filtros opcionales
 	@GetMapping
-	public List<Factura> listarFacturas(@RequestParam(required = false) Long contratoId,
+	public List<EntityModel<FacturaResponse>> listarFacturas(@RequestParam(required = false) Long contratoId,
 			@RequestParam(required = false) String periodo, @RequestParam(required = false) EstadoFactura estado) {
 
-		return facturaServicio.listarFacturas(contratoId, periodo, estado);
+		return facturaServicio.listarFacturas(contratoId, periodo, estado).stream().map(this::convertirAResponse)
+				.toList();
+	}
+
+	// Anular una factura pendiente o vencida
+
+	// Anular una factura
+	@PatchMapping("/{id}/estado")
+	public EntityModel<FacturaResponse> anularFactura(@PathVariable Long id) {
+
+		try {
+			Factura factura = facturaServicio.anularFactura(id);
+
+			return convertirAResponse(factura);
+
+		} catch (IllegalStateException e) {
+			throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage());
+		}
+	}
+
+	// Convertir una factura en DTO con enlaces HATEOAS
+	private EntityModel<FacturaResponse> convertirAResponse(Factura factura) {
+
+		Long facturaId = factura.getId();
+		Long contratoId = factura.getContrato().getId();
+
+		FacturaResponse response = new FacturaResponse(facturaId, contratoId, factura.getPeriodo(),
+				factura.getConcepto(), factura.getFechaEmision(), factura.getFechaVencimiento(), factura.getImporte(),
+				factura.getFacturacionMensual(), facturaServicio.obtenerEstadoActual(factura));
+
+		Link self = WebMvcLinkBuilder
+				.linkTo(WebMvcLinkBuilder.methodOn(FacturaControlador.class).obtenerFactura(facturaId)).withSelfRel();
+
+		Link contrato = Link.of("http://localhost:8080/contratos/" + contratoId, "contrato");
+
+		return EntityModel.of(response, self, contrato);
 	}
 
 }

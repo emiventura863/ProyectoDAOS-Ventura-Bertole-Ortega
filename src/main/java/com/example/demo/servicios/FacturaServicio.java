@@ -42,52 +42,66 @@ public class FacturaServicio {
 	public Factura emitirFactura(Long contratoId, String periodo, String concepto, LocalDate fechaEmision,
 			LocalDate fechaVencimiento, BigDecimal importe) {
 
-		// 1. Buscar el contrato
-		Contrato contrato = contratoRepositorio.findById(contratoId)
-				.orElseThrow(() -> new IllegalArgumentException("No existe el contrato: " + contratoId));
-
-		// 2. Verificar que este activo y no eliminado
-		if (contrato.getEstado() != EstadoContrato.ACTIVO || Boolean.TRUE.equals(contrato.getEliminado())) {
-			throw new IllegalStateException("El contrato no esta activo o fue eliminado");
+		// 1. Validar que se haya indicado un contrato
+		if (contratoId == null) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El ID del contrato es obligatorio");
 		}
 
-		// 3. Validar el periodo AAAA-MM
+		// 2. Validar el periodo AAAA-MM
 		YearMonth mesFacturado;
 
 		try {
+			if (periodo == null || !periodo.matches("\\d{4}-(0[1-9]|1[0-2])")) {
+				throw new IllegalArgumentException();
+			}
+
 			mesFacturado = YearMonth.parse(periodo);
-		} catch (DateTimeParseException | NullPointerException e) {
-			throw new IllegalArgumentException("El periodo debe tener formato AAAA-MM");
+
+		} catch (DateTimeParseException | IllegalArgumentException e) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El periodo debe tener formato AAAA-MM");
 		}
 
-		// 4. Verificar vigencia del contrato
+		// 3. Buscar el contrato
+		Contrato contrato = contratoRepositorio.findById(contratoId).orElseThrow(
+				() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No existe el contrato con ID: " + contratoId));
+
+		// 4. Verificar que el contrato este activo
+		if (contrato.getEstado() != EstadoContrato.ACTIVO || Boolean.TRUE.equals(contrato.getEliminado())) {
+
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "El contrato no esta activo o fue eliminado");
+		}
+
+		// 5. Verificar vigencia del contrato
 		LocalDate inicio = contrato.getFechaInicio();
 		LocalDate fin = inicio.plusMonths(contrato.getDuracionMeses()).minusDays(1);
 
 		if (mesFacturado.atEndOfMonth().isBefore(inicio) || mesFacturado.atDay(1).isAfter(fin)) {
-			throw new IllegalStateException("El periodo esta fuera de la vigencia del contrato");
+
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "El periodo esta fuera de la vigencia del contrato");
 		}
 
-		// 5. Distinguir factura mensual de adicional
+		// 6. Distinguir factura mensual de adicional
 		boolean mensual = (importe == null);
 
-		// 6. Evitar duplicados de facturacion mensual
+		// 7. Evitar duplicados mensuales
 		if (mensual && facturaRepositorio.existsByContratoIdAndPeriodoAndFacturacionMensualTrueAndEstadoNot(contratoId,
 				periodo, EstadoFactura.ANULADA)) {
+
 			throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe una factura mensual para ese periodo");
 		}
 
-		// 7. Completar importe
+		// 8. Calcular y validar el importe
 		BigDecimal importeFinal = mensual ? contrato.getImporteMensual() : importe;
 
 		if (importeFinal == null || importeFinal.compareTo(BigDecimal.ZERO) <= 0) {
-			throw new IllegalArgumentException("El importe debe ser mayor a cero");
+
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El importe debe ser mayor a cero");
 		}
 
-		// 8. Completar fecha de emision
+		// 9. Completar fecha de emision
 		LocalDate emision = fechaEmision != null ? fechaEmision : LocalDate.now();
 
-		// 9. Calcular vencimiento si no fue indicado
+		// 10. Calcular vencimiento
 		LocalDate vencimiento = fechaVencimiento;
 
 		if (vencimiento == null) {
@@ -96,12 +110,13 @@ public class FacturaServicio {
 			vencimiento = mesFacturado.atDay(dia);
 		}
 
-		// 10. Validar fechas
+		// 11. Validar fechas
 		if (emision.isAfter(vencimiento)) {
-			throw new IllegalArgumentException("La emision no puede ser posterior al vencimiento");
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+					"La emision no puede ser posterior al vencimiento");
 		}
 
-		// 11. Crear la factura
+		// 12. Crear factura
 		Factura factura = new Factura();
 
 		factura.setContrato(contrato);
@@ -113,7 +128,7 @@ public class FacturaServicio {
 		factura.setFacturacionMensual(mensual);
 		factura.setEstado(EstadoFactura.PENDIENTE);
 
-		// 12. Guardar en MySQL
+		// 13. Guardar en MySQL
 		return facturaRepositorio.save(factura);
 	}
 
