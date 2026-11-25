@@ -1,25 +1,24 @@
 package com.example.demo.controladores;
 
-import java.net.URI;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.hateoas.EntityModel;
+import org.springframework.hateoas.Link;
+import org.springframework.hateoas.server.mvc.WebMvcLinkBuilder;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import com.example.demo.dto.CambiarEstadoRequest;
 import com.example.demo.dto.CrearIncidenteRequest;
 import com.example.demo.dto.HistorialEstadoResponse;
 import com.example.demo.dto.IncidenteResponse;
+import com.example.demo.entidades.CategoriaIncidente;
+import com.example.demo.entidades.EstadoIncidente;
 import com.example.demo.entidades.Incidente;
+import com.example.demo.entidades.PrioridadIncidente;
 import com.example.demo.servicios.IncidenteService;
 import com.example.demo.servicios.IncidenteService.IncidenteNoEncontradoException;
 import com.example.demo.servicios.IncidenteService.TransicionEstadoInvalidaException;
@@ -27,74 +26,142 @@ import com.example.demo.servicios.IncidenteService.TransicionEstadoInvalidaExcep
 import jakarta.validation.Valid;
 
 @RestController
-@RequestMapping("/api/incidentes")
+@RequestMapping("/incidentes")
 public class IncidenteController {
 
     private final IncidenteService incidenteService;
 
+    // Inyeccion de dependencias
     public IncidenteController(IncidenteService incidenteService) {
         this.incidenteService = incidenteService;
     }
 
+    // Crear un incidente
     @PostMapping
-    public ResponseEntity<IncidenteResponse> crear(@Valid @RequestBody CrearIncidenteRequest request) {
+    public ResponseEntity<EntityModel<IncidenteResponse>> crear(
+            @Valid @RequestBody CrearIncidenteRequest request) {
+
         Incidente creado = incidenteService.crearIncidente(
                 request.getContratoId(),
                 request.getTitulo(),
                 request.getDescripcion(),
                 request.getCategoria(),
-                request.getPrioridad()
-        );
-        IncidenteResponse body = IncidenteResponse.fromEntity(creado);
-        return ResponseEntity
-                .created(URI.create("/api/incidentes/" + creado.getId()))
-                .body(body);
+                request.getPrioridad());
+
+        EntityModel<IncidenteResponse> modelo =
+                convertirAResponse(creado);
+
+        return ResponseEntity.created(
+                modelo.getRequiredLink("self").toUri())
+                .body(modelo);
     }
 
+    // Listar incidentes con filtros opcionales
     @GetMapping
-    public ResponseEntity<List<IncidenteResponse>> listar() {
-        List<IncidenteResponse> lista = incidenteService.listarIncidentes().stream()
-                .map(IncidenteResponse::fromEntity)
+    public ResponseEntity<List<EntityModel<IncidenteResponse>>> listar(
+            @RequestParam(required = false) Long contratoId,
+            @RequestParam(required = false) EstadoIncidente estado,
+            @RequestParam(required = false) PrioridadIncidente prioridad,
+            @RequestParam(required = false) CategoriaIncidente categoria) {
+
+        List<EntityModel<IncidenteResponse>> lista = incidenteService
+                .listarIncidentes(contratoId, estado, prioridad, categoria)
+                .stream()
+                .map(this::convertirAResponse)
                 .toList();
+
         return ResponseEntity.ok(lista);
     }
 
+    // Consultar un incidente por ID
     @GetMapping("/{id}")
-    public ResponseEntity<IncidenteResponse> obtenerPorId(@PathVariable Long id) {
+    public ResponseEntity<EntityModel<IncidenteResponse>> obtenerPorId(
+            @PathVariable Long id) {
+
         Incidente incidente = incidenteService.buscarPorId(id);
-        return ResponseEntity.ok(IncidenteResponse.fromEntity(incidente));
+
+        return ResponseEntity.ok(convertirAResponse(incidente));
     }
 
+    // Cambiar el estado de un incidente
     @PatchMapping("/{id}/estado")
-    public ResponseEntity<IncidenteResponse> cambiarEstado(@PathVariable Long id,
-                                                          @Valid @RequestBody CambiarEstadoRequest request) {
-        Incidente actualizado = incidenteService.cambiarEstado(id, request.getEstado());
-        return ResponseEntity.ok(IncidenteResponse.fromEntity(actualizado));
+    public ResponseEntity<EntityModel<IncidenteResponse>> cambiarEstado(
+            @PathVariable Long id,
+            @Valid @RequestBody CambiarEstadoRequest request) {
+
+        Incidente actualizado = incidenteService.cambiarEstado(
+                id, request.getEstado());
+
+        return ResponseEntity.ok(convertirAResponse(actualizado));
     }
 
+    // Consultar el historial de estados
     @GetMapping("/{id}/historial")
-    public ResponseEntity<List<HistorialEstadoResponse>> obtenerHistorial(@PathVariable Long id) {
-        List<HistorialEstadoResponse> historial = incidenteService.obtenerHistorial(id).stream()
+    public ResponseEntity<List<HistorialEstadoResponse>> obtenerHistorial(
+            @PathVariable Long id) {
+
+        List<HistorialEstadoResponse> historial = incidenteService
+                .obtenerHistorial(id)
+                .stream()
                 .map(HistorialEstadoResponse::fromEntity)
                 .toList();
+
         return ResponseEntity.ok(historial);
     }
 
+    // Manejar incidente inexistente
     @ExceptionHandler(IncidenteNoEncontradoException.class)
-    public ResponseEntity manejarNoEncontrado(IncidenteNoEncontradoException ex) {
+    public ResponseEntity<Map<String, String>> manejarNoEncontrado(
+            IncidenteNoEncontradoException ex) {
+
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(Map.of("error", ex.getMessage()));
     }
 
+    // Manejar transiciones de estado invalidas
     @ExceptionHandler(TransicionEstadoInvalidaException.class)
-    public ResponseEntity manejarTransicionInvalida(TransicionEstadoInvalidaException ex) {
+    public ResponseEntity<Map<String, String>> manejarTransicionInvalida(
+            TransicionEstadoInvalidaException ex) {
+
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(Map.of("error", ex.getMessage()));
     }
 
+    // Manejar argumentos invalidos
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity manejarArgumentoInvalido(IllegalArgumentException ex) {
+    public ResponseEntity<Map<String, String>> manejarArgumentoInvalido(
+            IllegalArgumentException ex) {
+
         return ResponseEntity.badRequest()
                 .body(Map.of("error", ex.getMessage()));
+    }
+
+    // Convertir incidente a DTO y agregar enlaces HATEOAS
+    private EntityModel<IncidenteResponse> convertirAResponse(
+            Incidente incidente) {
+
+        IncidenteResponse response =
+                IncidenteResponse.fromEntity(incidente);
+
+        Link self = WebMvcLinkBuilder
+                .linkTo(WebMvcLinkBuilder.methodOn(
+                        IncidenteController.class)
+                        .obtenerPorId(incidente.getId()))
+                .withSelfRel();
+
+        Link contrato = Link.of(
+                ServletUriComponentsBuilder.fromCurrentContextPath()
+                        .path("/contratos/{id}")
+                        .buildAndExpand(incidente.getContratoId())
+                        .toUriString(),
+                "contrato");
+
+        Link historial = WebMvcLinkBuilder
+                .linkTo(WebMvcLinkBuilder.methodOn(
+                        IncidenteController.class)
+                        .obtenerHistorial(incidente.getId()))
+                .withRel("historial");
+
+        return EntityModel.of(response, self, contrato, historial);
     }
 }
