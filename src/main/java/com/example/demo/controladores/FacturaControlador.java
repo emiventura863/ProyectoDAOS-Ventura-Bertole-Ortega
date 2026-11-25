@@ -27,16 +27,20 @@ import org.springframework.hateoas.Link;
 
 import org.springframework.hateoas.EntityModel;
 import org.springframework.hateoas.server.mvc.WebMvcLinkBuilder;
+import com.example.demo.repositorios.PagoRepositorio;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 @RestController
 @RequestMapping("/facturas")
 public class FacturaControlador {
 
 	private final FacturaServicio facturaServicio;
+	private final PagoRepositorio pagoRepositorio;
 
 	// Inyeccion de dependencias
-	public FacturaControlador(FacturaServicio facturaServicio) {
+	public FacturaControlador(FacturaServicio facturaServicio, PagoRepositorio pagoRepositorio) {
 		this.facturaServicio = facturaServicio;
+		this.pagoRepositorio = pagoRepositorio;
 	}
 
 	// Consultar una factura por ID
@@ -100,9 +104,16 @@ public class FacturaControlador {
 		Link self = WebMvcLinkBuilder
 				.linkTo(WebMvcLinkBuilder.methodOn(FacturaControlador.class).obtenerFactura(facturaId)).withSelfRel();
 
-		Link contrato = Link.of("http://localhost:8080/contratos/" + contratoId, "contrato");
+		Link contrato = Link.of(ServletUriComponentsBuilder.fromCurrentContextPath().path("/contratos/{id}")
+				.buildAndExpand(contratoId).toUriString(), "contrato");
 
-		return EntityModel.of(response, self, contrato);
+		EntityModel<FacturaResponse> modelo = EntityModel.of(response, self, contrato);
+
+		// Agregar enlace al pago solamente si existe
+		pagoRepositorio.findByFacturaId(facturaId).ifPresent(pago -> modelo.add(WebMvcLinkBuilder
+				.linkTo(WebMvcLinkBuilder.methodOn(PagoControlador.class).obtenerPago(pago.getId())).withRel("pago")));
+
+		return modelo;
 	}
 
 }

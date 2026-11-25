@@ -9,11 +9,14 @@ import org.springframework.data.repository.query.Param;
 
 import com.example.demo.entidades.MedioPago;
 import com.example.demo.entidades.Pago;
+import java.util.Optional;
 
 public interface PagoRepositorio extends JpaRepository<Pago, Long> {
 
     // Spring Data arma la consulta solo a partir del nombre: busca por factura.id
     boolean existsByFacturaId(Long facturaId);
+ // Buscar el pago asociado a una factura
+    Optional<Pago> findByFacturaId(Long facturaId);
 
     // Listado con filtros opcionales: un parámetro null significa "no filtrar por eso"
     @Query("""
