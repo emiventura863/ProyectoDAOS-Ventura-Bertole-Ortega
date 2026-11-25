@@ -1,0 +1,177 @@
+HOGARYA - DAOS - Pruebas reproducibles S01, S02 y S03
+Base: http://localhost:8080
+Requisitos: iniciar Spring Boot y cargar datos_prueba.sql una sola vez en tablas vacias.
+Ejecutar en PowerShell (curl.exe); los JSON usan comillas escapadas para Windows PowerShell 5.1.
+Ejecutar en orden. Las pruebas de escritura modifican la base; restaurar los datos iniciales en una base de prueba para repetir.
+Los codigos son esperados por revision estatica, no ejecucion de estos comandos.
+Fecha de referencia: 25/11/2026. Las pruebas de alta de incidentes requieren contrato 1 vigente (01/11/2026 a 31/10/2027); los pagos fechados requieren fecha actual >= 25/11/2026.
+
+=== S01 FACTURAS ===
+Consultar contrato | HTTP 200
+curl.exe -i -X GET "http://localhost:8080/contratos/1"
+
+Listar | HTTP 200
+curl.exe -i -X GET "http://localhost:8080/facturas"
+
+Factura pagada y enlaces self, contrato, pago | HTTP 200
+curl.exe -i -X GET "http://localhost:8080/facturas/2"
+
+Factura sin pago | HTTP 200
+curl.exe -i -X GET "http://localhost:8080/facturas/3"
+
+Filtrar | HTTP 200
+curl.exe -i -X GET "http://localhost:8080/facturas?contratoId=1&periodo=2026-11&estado=PAGADA"
+
+Vencidas | HTTP 200
+curl.exe -i -X GET "http://localhost:8080/facturas?estado=VENCIDA"
+Desde 01/03/2026 la factura 4 esta vencida; desde 11/11/2026 tambien la 3, antes de pagarla.
+
+No existe | HTTP 404
+curl.exe -i -X GET "http://localhost:8080/facturas/999999"
+
+Contrato faltante | HTTP 400
+curl.exe -i -X POST "http://localhost:8080/facturas" -H "Content-Type: application/json" --data-raw '{\"periodo\":\"2026-12\"}'
+
+Contrato inexistente | HTTP 404
+curl.exe -i -X POST "http://localhost:8080/facturas" -H "Content-Type: application/json" --data-raw '{\"contratoId\":999999,\"periodo\":\"2026-12\"}'
+
+Periodo invalido | HTTP 400
+curl.exe -i -X POST "http://localhost:8080/facturas" -H "Content-Type: application/json" --data-raw '{\"contratoId\":1,\"periodo\":\"2026-13\"}'
+
+Contrato borrador | HTTP 409
+curl.exe -i -X POST "http://localhost:8080/facturas" -H "Content-Type: application/json" --data-raw '{\"contratoId\":3,\"periodo\":\"2026-12\"}'
+
+Contrato eliminado | HTTP 409
+curl.exe -i -X POST "http://localhost:8080/facturas" -H "Content-Type: application/json" --data-raw '{\"contratoId\":4,\"periodo\":\"2026-12\"}'
+
+Fuera de vigencia | HTTP 409
+curl.exe -i -X POST "http://localhost:8080/facturas" -H "Content-Type: application/json" --data-raw '{\"contratoId\":5,\"periodo\":\"2026-12\"}'
+
+Mensual duplicada | HTTP 409
+curl.exe -i -X POST "http://localhost:8080/facturas" -H "Content-Type: application/json" --data-raw '{\"contratoId\":1,\"periodo\":\"2026-11\"}'
+
+Importe invalido | HTTP 400
+curl.exe -i -X POST "http://localhost:8080/facturas" -H "Content-Type: application/json" --data-raw '{\"contratoId\":1,\"periodo\":\"2026-12\",\"importe\":-1}'
+
+Emision posterior al vencimiento | HTTP 400
+curl.exe -i -X POST "http://localhost:8080/facturas" -H "Content-Type: application/json" --data-raw '{\"contratoId\":1,\"periodo\":\"2026-12\",\"fechaEmision\":\"2026-12-21\"}'
+
+Emitir mensual | HTTP 201
+curl.exe -i -X POST "http://localhost:8080/facturas" -H "Content-Type: application/json" --data-raw '{\"contratoId\":1,\"periodo\":\"2026-12\",\"fechaEmision\":\"2026-12-01\",\"concepto\":\"Alquiler diciembre\"}'
+
+Ajustar dia 31 a 30 | HTTP 201
+curl.exe -i -X POST "http://localhost:8080/facturas" -H "Content-Type: application/json" --data-raw '{\"contratoId\":2,\"periodo\":\"2026-04\",\"fechaEmision\":\"2026-04-01\"}'
+
+Cargo adicional | HTTP 201
+curl.exe -i -X POST "http://localhost:8080/facturas" -H "Content-Type: application/json" --data-raw '{\"contratoId\":1,\"periodo\":\"2026-11\",\"importe\":1000,\"fechaEmision\":\"2026-11-01\"}'
+
+Anular pagada | HTTP 409
+curl.exe -i -X PATCH "http://localhost:8080/facturas/2/estado"
+
+Anular vencida | HTTP 200
+curl.exe -i -X PATCH "http://localhost:8080/facturas/4/estado"
+
+Anular nuevamente | HTTP 409
+curl.exe -i -X PATCH "http://localhost:8080/facturas/4/estado"
+
+Reemitir mensual anulada | HTTP 201
+curl.exe -i -X POST "http://localhost:8080/facturas" -H "Content-Type: application/json" --data-raw '{\"contratoId\":2,\"periodo\":\"2026-02\",\"fechaEmision\":\"2026-02-01\"}'
+
+=== S02 PAGOS ===
+Listar | HTTP 200
+curl.exe -i -X GET "http://localhost:8080/pagos"
+
+Consultar pago y enlace factura | HTTP 200
+curl.exe -i -X GET "http://localhost:8080/pagos/1"
+
+Filtrar | HTTP 200
+curl.exe -i -X GET "http://localhost:8080/pagos?facturaId=2&medioPago=TRANSFERENCIA&desde=2026-11-01&hasta=2026-11-30"
+
+Pago inexistente | HTTP 404
+curl.exe -i -X GET "http://localhost:8080/pagos/999999"
+
+Factura inexistente | HTTP 404
+curl.exe -i -X POST "http://localhost:8080/pagos" -H "Content-Type: application/json" --data-raw '{\"facturaId\":999999,\"fechaPago\":\"2026-11-25\",\"medioPago\":\"TRANSFERENCIA\",\"importePagado\":15000,\"interes\":0}'
+
+Factura anulada | HTTP 409
+curl.exe -i -X POST "http://localhost:8080/pagos" -H "Content-Type: application/json" --data-raw '{\"facturaId\":1,\"fechaPago\":\"2026-11-25\",\"medioPago\":\"TRANSFERENCIA\",\"importePagado\":15000,\"interes\":0}'
+
+Pago duplicado | HTTP 409
+curl.exe -i -X POST "http://localhost:8080/pagos" -H "Content-Type: application/json" --data-raw '{\"facturaId\":2,\"fechaPago\":\"2026-11-25\",\"medioPago\":\"TRANSFERENCIA\",\"importePagado\":350000,\"interes\":0}'
+
+Importe parcial | HTTP 409
+curl.exe -i -X POST "http://localhost:8080/pagos" -H "Content-Type: application/json" --data-raw '{\"facturaId\":3,\"fechaPago\":\"2026-11-25\",\"medioPago\":\"TRANSFERENCIA\",\"importePagado\":100,\"interes\":0}'
+
+Interes negativo | HTTP 400
+curl.exe -i -X POST "http://localhost:8080/pagos" -H "Content-Type: application/json" --data-raw '{\"facturaId\":3,\"fechaPago\":\"2026-11-25\",\"medioPago\":\"TRANSFERENCIA\",\"importePagado\":15000,\"interes\":-1}'
+
+Fecha anterior a emision | HTTP 409
+curl.exe -i -X POST "http://localhost:8080/pagos" -H "Content-Type: application/json" --data-raw '{\"facturaId\":3,\"fechaPago\":\"2026-11-01\",\"medioPago\":\"TRANSFERENCIA\",\"importePagado\":15000,\"interes\":0}'
+
+Registrar pago con interes | HTTP 201
+curl.exe -i -X POST "http://localhost:8080/pagos" -H "Content-Type: application/json" --data-raw '{\"facturaId\":3,\"fechaPago\":\"2026-11-25\",\"medioPago\":\"TRANSFERENCIA\",\"importePagado\":15500,\"interes\":500}'
+
+Verificar factura PAGADA y enlace pago | HTTP 200
+curl.exe -i -X GET "http://localhost:8080/facturas/3"
+
+Consultar pago asociado | HTTP 200
+curl.exe -i -X GET "http://localhost:8080/pagos?facturaId=3"
+
+Rechazar segundo pago | HTTP 409
+curl.exe -i -X POST "http://localhost:8080/pagos" -H "Content-Type: application/json" --data-raw '{\"facturaId\":3,\"fechaPago\":\"2026-11-25\",\"medioPago\":\"TRANSFERENCIA\",\"importePagado\":15500,\"interes\":500}'
+
+=== S03 INCIDENTES ===
+Listar | HTTP 200
+curl.exe -i -X GET "http://localhost:8080/incidentes"
+
+Consultar incidente y enlaces | HTTP 200
+curl.exe -i -X GET "http://localhost:8080/incidentes/2"
+
+Filtros combinados | HTTP 200
+curl.exe -i -X GET "http://localhost:8080/incidentes?contratoId=1&estado=CANCELADO&prioridad=MEDIA&categoria=ELECTRICIDAD"
+
+Filtro sin resultados | HTTP 200
+curl.exe -i -X GET "http://localhost:8080/incidentes?contratoId=999999"
+
+Historial existente | HTTP 200
+curl.exe -i -X GET "http://localhost:8080/incidentes/2/historial"
+
+No existe | HTTP 404
+curl.exe -i -X GET "http://localhost:8080/incidentes/999999"
+
+Contrato inexistente | HTTP 404
+curl.exe -i -X POST "http://localhost:8080/incidentes" -H "Content-Type: application/json" --data-raw '{\"contratoId\":999999,\"titulo\":\"Prueba curl\",\"descripcion\":\"Problema electrico\",\"categoria\":\"ELECTRICIDAD\",\"prioridad\":\"MEDIA\"}'
+
+Contrato borrador | HTTP 409
+curl.exe -i -X POST "http://localhost:8080/incidentes" -H "Content-Type: application/json" --data-raw '{\"contratoId\":3,\"titulo\":\"Prueba curl\",\"descripcion\":\"Problema electrico\",\"categoria\":\"ELECTRICIDAD\",\"prioridad\":\"MEDIA\"}'
+
+Contrato eliminado | HTTP 409
+curl.exe -i -X POST "http://localhost:8080/incidentes" -H "Content-Type: application/json" --data-raw '{\"contratoId\":4,\"titulo\":\"Prueba curl\",\"descripcion\":\"Problema electrico\",\"categoria\":\"ELECTRICIDAD\",\"prioridad\":\"MEDIA\"}'
+
+Contrato fuera de vigencia | HTTP 409
+curl.exe -i -X POST "http://localhost:8080/incidentes" -H "Content-Type: application/json" --data-raw '{\"contratoId\":5,\"titulo\":\"Prueba curl\",\"descripcion\":\"Problema electrico\",\"categoria\":\"ELECTRICIDAD\",\"prioridad\":\"MEDIA\"}'
+
+Titulo vacio | HTTP 400
+curl.exe -i -X POST "http://localhost:8080/incidentes" -H "Content-Type: application/json" --data-raw '{\"contratoId\":1,\"titulo\":\"\",\"descripcion\":\"Problema electrico\",\"categoria\":\"ELECTRICIDAD\",\"prioridad\":\"MEDIA\"}'
+
+Crear incidente ABIERTO | HTTP 201
+curl.exe -i -X POST "http://localhost:8080/incidentes" -H "Content-Type: application/json" --data-raw '{\"contratoId\":1,\"titulo\":\"Prueba curl\",\"descripcion\":\"Problema electrico\",\"categoria\":\"ELECTRICIDAD\",\"prioridad\":\"MEDIA\"}'
+
+Anotar el ID devuelto por la prueba anterior. Sustituir ID_NUEVO por ese numero en los comandos siguientes.
+
+Pasar a EN_PROCESO | HTTP 200
+curl.exe -i -X PATCH "http://localhost:8080/incidentes/ID_NUEVO/estado" -H "Content-Type: application/json" --data-raw '{\"estado\":\"EN_PROCESO\"}'
+
+Rechazar resolucion directa | HTTP 409
+curl.exe -i -X PATCH "http://localhost:8080/incidentes/ID_NUEVO/estado" -H "Content-Type: application/json" --data-raw '{\"estado\":\"RESUELTO\"}'
+
+Cancelar | HTTP 200
+curl.exe -i -X PATCH "http://localhost:8080/incidentes/ID_NUEVO/estado" -H "Content-Type: application/json" --data-raw '{\"estado\":\"CANCELADO\"}'
+
+Rechazar reapertura de cancelado | HTTP 409
+curl.exe -i -X PATCH "http://localhost:8080/incidentes/ID_NUEVO/estado" -H "Content-Type: application/json" --data-raw '{\"estado\":\"REABIERTO\"}'
+
+Historial: alta, EN_PROCESO, CANCELADO; sin transiciones rechazadas | HTTP 200
+curl.exe -i -X GET "http://localhost:8080/incidentes/ID_NUEVO/historial"
+
+Fin. S04 no forma parte de esta entrega. El historial inicial del incidente 1 proviene de pruebas anteriores a la correccion de transiciones.
