@@ -2,8 +2,8 @@
 -- Datos de prueba reconstruidos de las capturas de MySQL Workbench.
 -- Ejecutar una sola vez sobre tablas vacias, creadas previamente por Hibernate.
 -- No elimina ni modifica registros existentes.
-CREATE DATABASE IF NOT EXISTS hogarya_daos;
-USE hogarya_daos;
+CREATE DATABASE IF NOT EXISTS `01-Ventura-Bertole-Ortega`;
+USE `01-Ventura-Bertole-Ortega`;
 START TRANSACTION;
 
 INSERT INTO contratos (id, dia_vencimiento, duracion_meses, eliminado, estado, fecha_inicio, importe_mensual) VALUES
